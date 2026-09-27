@@ -26,7 +26,14 @@ dotnet run --project src/MrzReader -- <image> [--lang ocrb|eng] [--tessdata <dir
 It prints the MRZ lines, the parsed fields, the check digit results, and the MRZ as one `|`-separated string
 that can be passed to `EmrtdReader --mrz`. Exit code: `0` = all check digits OK, `2` = no MRZ found, `3` = MRZ found but some check digits failed.
 
-No sample images are included in this repository; use a photo of your own document or a specimen.
+`image/` contains a specimen Iraqi national ID card (placeholder data, name CITIZEN JOHN):
+
+```
+dotnet run --project src/MrzReader -- image/docBack.jpg
+```
+
+The OCR reads the MRZ exactly, but the document number and composite check digits report FAILED: the
+specimen's printed check digits are not valid, so it doubles as a negative test.
 
 ## Requirements
 

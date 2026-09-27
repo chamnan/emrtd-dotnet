@@ -1,7 +1,5 @@
 bin/
 obj/
 .DS_Store
-# Sample document photos contain personal data
-image/
 # Not redistributable (no license); see README for the download command
 src/MrzReader/tessdata/ocrb.traineddata
