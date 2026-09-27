@@ -1,9 +1,9 @@
 using MrzReader;
 using SkiaSharp;
 
-// Usage: MrzReader [image] [--lang ocrb|eng] [--tessdata <dir>] [--debug]
+// Usage: MrzReader [image] [--lang auto|ocrbfast|ocrb|eng] [--tessdata <dir>] [--debug]
 string imageArg = "image/docBack.jpg";
-string language = "ocrb";
+string language = "auto";
 string tessData = Path.Combine(AppContext.BaseDirectory, "tessdata");
 bool debug = false;
 
@@ -32,42 +32,69 @@ if (bitmap is null)
     return 1;
 }
 
-// ocrb.traineddata is not redistributable, so it is downloaded separately (see README); fall back to eng.
-if (language == "ocrb" && !File.Exists(Path.Combine(tessData, "ocrb.traineddata")))
+// Prefer the integer OCR-B model (fastest), then the float one, then eng. The OCR-B models are not
+// redistributable, so they are downloaded separately (see README).
+if (language == "auto")
 {
-    Console.Error.WriteLine("ocrb.traineddata not found, using eng (less accurate). See README to download the OCR-B model.");
-    language = "eng";
+    language = new[] { "ocrbfast", "ocrb" }.FirstOrDefault(l => File.Exists(Path.Combine(tessData, $"{l}.traineddata"))) ?? "eng";
+    if (language == "eng")
+        Console.Error.WriteLine("OCR-B model not found, using eng (less accurate). See README to download it.");
 }
 
-using var ocr = new Tesseract(tessData, language);
-ocr.SetPageSegMode(PageSegMode.SingleBlock);
-ocr.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<");
-ocr.SetVariable("load_system_dawg", "0");
-ocr.SetVariable("load_freq_dawg", "0");
+// OCR quality depends on crop and scale, so several variants are tried, cheapest first, a few at a time
+// in parallel (one Tesseract engine per worker). Stop as soon as all check digits pass, or when two
+// variants agree on the same MRZ (the document's own check digits may be wrong, e.g. a specimen).
+var clock = System.Diagnostics.Stopwatch.StartNew();
+var variants = (
+    from bottom in new[] { 0.45, 0.6, 1.0 }
+    from scale in new[] { 2f, 3f, 4f }
+    from binarize in new[] { true, false }
+    select (Bottom: bottom, Scale: scale, Binarize: binarize)).ToArray();
 
-// OCR quality depends a lot on crop and scale, so try a few variants and keep the one
-// that passes the most check digits. Stop early once everything validates.
+int workers = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+var engines = new Tesseract?[workers];
 MrzResult? best = null;
-foreach (double bottom in new[] { 0.45, 0.6, 1.0 })
-foreach (float scale in new[] { 3f, 2f, 4f })
-foreach (bool binarize in new[] { false, true })
+var seen = new Dictionary<string, int>();
+
+try
 {
-    var image = ImagePreprocessor.Prepare(bitmap, bottom, scale);
-    if (binarize) image = ImagePreprocessor.Binarize(image);
-
-    string text = ocr.Recognize(image.Pixels, image.Width, image.Height);
-    var result = MrzParser.Parse(text);
-    if (debug)
+    foreach (var batch in variants.Chunk(workers))
     {
-        Console.Error.WriteLine($"--- bottom={bottom:P0} scale={scale} binarize={binarize} " +
-                                $"checks={result?.ValidChecks ?? 0}/{result?.Checks.Count ?? 0}");
-        Console.Error.WriteLine(text.TrimEnd());
-    }
+        var outcomes = new (string Text, MrzResult? Result, long Ms, int Width, int Height)[batch.Length];
+        Parallel.For(0, batch.Length, i =>
+        {
+            long started = clock.ElapsedMilliseconds;
+            var engine = engines[i] ??= CreateEngine(tessData, language);
+            var image = ImagePreprocessor.Prepare(bitmap, batch[i].Bottom, batch[i].Scale);
+            if (batch[i].Binarize) image = ImagePreprocessor.Binarize(image);
+            string text = engine.Recognize(image.Pixels, image.Width, image.Height);
+            outcomes[i] = (text, MrzParser.Parse(text), clock.ElapsedMilliseconds - started, image.Width, image.Height);
+        });
 
-    if (result is not null && (best is null || result.ValidChecks > best.ValidChecks)) best = result;
-    if (best?.IsValid == true) goto done;
+        bool stable = false;
+        for (int i = 0; i < batch.Length; i++)
+        {
+            var (text, result, ms, width, height) = outcomes[i];
+            if (debug)
+            {
+                Console.Error.WriteLine($"--- bottom={batch[i].Bottom:P0} scale={batch[i].Scale} binarize={batch[i].Binarize} " +
+                                        $"checks={result?.ValidChecks ?? 0}/{result?.Checks.Count ?? 0} " +
+                                        $"corrections={result?.Corrections ?? 0} {width}x{height} {ms} ms");
+                Console.Error.WriteLine(text.TrimEnd());
+            }
+            if (result is null) continue;
+            if (best is null || result.Score > best.Score) best = result;
+            string key = string.Join('|', result.Lines);
+            stable |= (seen[key] = seen.GetValueOrDefault(key) + 1) >= 2 && key == string.Join('|', best.Lines);
+        }
+        if (best?.IsValid == true || stable) break;
+    }
 }
-done:
+finally
+{
+    foreach (var engine in engines) engine?.Dispose();
+}
+if (debug) Console.Error.WriteLine($"OCR total ({language}, {workers} workers): {clock.ElapsedMilliseconds} ms");
 
 if (best is null)
 {
@@ -102,6 +129,17 @@ foreach (var check in best.Checks)
     Console.WriteLine($"  {check.Field,-16}: {(check.Valid ? "OK" : "FAILED")}");
 
 return best.IsValid ? 0 : 3;
+
+static Tesseract CreateEngine(string tessData, string language)
+{
+    var engine = new Tesseract(tessData, language);
+    engine.SetPageSegMode(PageSegMode.SingleBlock);
+    engine.SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<");
+    engine.SetVariable("load_system_dawg", "0");
+    engine.SetVariable("load_freq_dawg", "0");
+    engine.SetVariable("tessedit_do_invert", "0"); // MRZ is never white-on-black; skip the inverted-text pass
+    return engine;
+}
 
 // Resolve relative paths against the current directory, then its parents, so the default
 // works whether the app is started from the repo root or from the project folder.

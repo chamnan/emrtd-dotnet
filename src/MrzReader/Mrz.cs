@@ -26,8 +26,17 @@ internal sealed class MrzResult
     public required string OptionalData2 { get; init; }
     public required List<CheckResult> Checks { get; init; }
 
+    /// <summary>Number of characters the OCR clean-up had to swap between digit and letter (O/0, I/1, ...).</summary>
+    public int Corrections { get; internal set; }
+
     public int ValidChecks => Checks.Count(c => c.Valid);
     public bool IsValid => Checks.All(c => c.Valid);
+
+    /// <summary>
+    /// Ranking between OCR candidates: check digits first, then fewest corrections. Corrections matter
+    /// because all-zero text (e.g. a printed "0000/00/00") passes check digits trivially.
+    /// </summary>
+    public int Score => ValidChecks * 10 - Corrections;
 }
 
 /// <summary>Finds and parses ICAO 9303 machine readable zones (TD1, TD2, TD3) in OCR text.</summary>
@@ -66,6 +75,14 @@ internal static partial class MrzParser
         ['0'] = 'O', ['1'] = 'I', ['2'] = 'Z', ['5'] = 'S', ['6'] = 'G', ['8'] = 'B',
     };
 
+    // First character of the document code (ICAO 9303 Parts 4-6).
+    private static readonly Dictionary<MrzFormat, string> ValidDocumentCodes = new()
+    {
+        [MrzFormat.TD1] = "ACI",
+        [MrzFormat.TD2] = "ACIPV",
+        [MrzFormat.TD3] = "PV",
+    };
+
     [GeneratedRegex("[^A-Z0-9<]")]
     private static partial Regex NonMrzChars();
 
@@ -86,14 +103,18 @@ internal static partial class MrzParser
                 var block = candidates.Skip(start).Take(count).ToArray();
                 if (block.Any(l => Math.Abs(l.Length - length) > 4)) continue;
 
-                var lines = block.Select((l, i) => Correct(FixLength(l, length), Masks[format][i])).ToArray();
+                int corrections = 0;
+                var lines = block.Select((l, i) => Correct(FixLength(l, length), Masks[format][i], ref corrections)).ToArray();
+                if (!ValidDocumentCodes[format].Contains(lines[0][0])) continue;
+
                 var result = format switch
                 {
                     MrzFormat.TD1 => ParseTd1(lines),
                     MrzFormat.TD2 => ParseTd2Or3(lines, MrzFormat.TD2),
                     _ => ParseTd2Or3(lines, MrzFormat.TD3),
                 };
-                if (best is null || result.ValidChecks > best.ValidChecks) best = result;
+                result.Corrections = corrections;
+                if (best is null || result.Score > best.Score) best = result;
             }
         }
         return best;
@@ -247,7 +268,7 @@ internal static partial class MrzParser
     [GeneratedRegex("<+")]
     private static partial Regex FillerRuns();
 
-    private static string Correct(string line, string mask)
+    private static string Correct(string line, string mask, ref int corrections)
     {
         var sb = new StringBuilder(line);
         for (int i = 0; i < sb.Length; i++)
@@ -255,6 +276,8 @@ internal static partial class MrzParser
             char c = sb[i];
             if (mask[i] == 'N' && ToDigit.TryGetValue(c, out char digit)) sb[i] = digit;
             else if (mask[i] == 'A' && ToLetter.TryGetValue(c, out char letter)) sb[i] = letter;
+            else continue;
+            corrections++;
         }
         return sb.ToString();
     }

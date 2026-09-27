@@ -17,10 +17,13 @@ the ICAO worked examples and a simulated chip, but not yet against a wide range 
 | `src/EmrtdReader` | Console app: MRZ → chip read on a PC/SC reader |
 | `tests/Emrtd.Tests` | xUnit tests for the chip library |
 
+Typical flow: photograph the MRZ side, run `MrzReader`, and pass its one-line MRZ string to `EmrtdReader --mrz`
+while the document is on the NFC reader.
+
 # MRZ reader (OCR)
 
 ```
-dotnet run --project src/MrzReader -- <image> [--lang ocrb|eng] [--tessdata <dir>] [--debug]
+dotnet run --project src/MrzReader -- <image> [--lang auto|ocrbfast|ocrb|eng] [--tessdata <dir>] [--debug]
 ```
 
 It prints the MRZ lines, the parsed fields, the check digit results, and the MRZ as one `|`-separated string
@@ -45,6 +48,9 @@ The Tesseract 5 native library must be installed (it is called through P/Invoke)
 
 If the library is somewhere else, set `TESSERACT_LIB` to its full path.
 
+On Snapdragon (ARM64) Surface models, the UB Mannheim builds are x64 only, so publish `MrzReader` for `win-x64`
+(it runs under emulation). The NFC projects have no native dependencies and run natively on `win-arm64`.
+
 Language models live in `src/MrzReader/tessdata` and are copied to the output folder. The stock `eng.traineddata`
 (Apache-2.0, from https://github.com/tesseract-ocr/tessdata) is included. For much better accuracy, download the OCR-B model
 (the MRZ font) from https://github.com/Shreeshrii/tessdata_ocrb. It is not redistributed here because that repository has no license:
@@ -53,7 +59,16 @@ Language models live in `src/MrzReader/tessdata` and are copied to the output fo
 curl -L -o src/MrzReader/tessdata/ocrb.traineddata https://github.com/Shreeshrii/tessdata_ocrb/raw/master/ocrb.traineddata
 ```
 
-When `ocrb.traineddata` is missing, the app falls back to `eng`.
+Optionally convert it to an integer model, which is about 30% faster per pass with the same results on the samples.
+The file is platform independent, so it can be converted once on any machine with the Tesseract training tools:
+
+```
+combine_tessdata -e src/MrzReader/tessdata/ocrb.traineddata ocrb.lstm
+lstmtraining --stop_training --convert_to_int --continue_from ocrb.lstm \
+  --traineddata src/MrzReader/tessdata/ocrb.traineddata --model_output src/MrzReader/tessdata/ocrbfast.traineddata
+```
+
+With `--lang auto` (the default) the app uses `ocrbfast`, then `ocrb`, then falls back to `eng`.
 
 ## How it works
 
@@ -61,7 +76,14 @@ When `ocrb.traineddata` is missing, the app falls back to `eng`.
 2. `Tesseract`: runs OCR with a `A-Z0-9<` whitelist.
 3. `MrzParser`: finds the MRZ lines, fixes line lengths and common OCR confusions (O/0, I/1, S/5, ...), then parses the fields and checks the check digits.
 
-Several crop and scale variants are tried, and the result that passes the most check digits wins.
+Several crop and scale variants are tried, cheapest first, up to 4 at a time in parallel (one Tesseract engine per core pair).
+Candidates are ranked by valid check digits, then by how few digit/letter corrections they needed (all-zero text passes
+check digits trivially). The search stops when every check digit passes, or when two variants agree on the same MRZ.
+`--debug` prints the OCR text, score and time of every variant.
+
+Typical timing on an Apple M3 Max: 0.2–0.3 s of OCR, about 0.3–0.5 s for the whole process (0.5 s with one worker).
+Slower CPUs and x64 emulation on ARM64 will add to this; run with `--debug` on the target device to see the
+`OCR total`. In a long-running app, create the Tesseract engines once and reuse them across images.
 
 # eMRTD chip reader (NFC)
 
