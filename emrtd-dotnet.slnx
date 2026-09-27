@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Emrtd/Emrtd.csproj" />
+    <Project Path="src/EmrtdReader/EmrtdReader.csproj" />
+    <Project Path="src/MrzReader/MrzReader.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Emrtd.Tests/Emrtd.Tests.csproj" />
+  </Folder>
+</Solution>
