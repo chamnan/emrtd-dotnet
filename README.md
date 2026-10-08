@@ -108,35 +108,105 @@ over PC/SC, using the MRZ as the access key. JMRTD was used as the reference imp
 dotnet run --project src/EmrtdReader -- --list-readers
 dotnet run --project src/EmrtdReader -- --mrz "<line1>|<line2>|<line3>" --csca <file-or-folder> --out chip-dump
 dotnet run --project src/EmrtdReader -- --doc D23145890 --dob 740812 --exp 120415
-dotnet run --project src/EmrtdReader -- --dump samples/icao-specimen-dump --csca samples/icao-specimen-dump/csca.cer
+dotnet run --project src/EmrtdReader -- --dump samples/icao-td1-id-card --csca samples/icao-td1-id-card/csca.cer
+dotnet run --project src/EmrtdReader -- --dump samples/icao-td3-passport --csca samples/icao-td3-passport/csca.cer
 ```
 
-The last command reads the sample chip dump offline, with no reader needed (see [Offline: reading a chip dump](#offline-reading-a-chip-dump)).
+The last two commands read the sample chip dumps offline, with no reader needed (see [Offline: reading a chip dump](#offline-reading-a-chip-dump)).
 
-Other options: `--reader <part of name>`, `--bac` (skip PACE), `--no-face`, `--timeout <seconds>`.
+Other options: `--reader <part of name>`, `--bac` (skip PACE), `--no-face`, `--timeout <seconds>`, `--dump <folder>`.
 Exit code: `0` = genuine (Passive Authentication passed), `2` = read failed, `3` = read but not verified.
 
 `--csca` takes DER/PEM certificates or ICAO master lists (`.ml`), a single file or a folder. Without it,
 the SOD signature and hashes are still checked, but not whether the Document Signer is trusted.
 
+It prints the chip's MRZ (DG1) with the same fields and check digits as `MrzReader`, DG11 / DG12 details
+(the DG11 full name split into primary and secondary identifiers), the face image size and the Passive Authentication result.
+
+## Reading an ID card (TD1) or a passport (TD3)
+
+The chip will not answer until the reader proves it knows the MRZ: BAC and PACE derive their keys from the
+**document number, date of birth and date of expiry**, each with its check digit. Only where these fields sit
+differs between the formats; the chip protocol is the same.
+
+| | TD1: ID card | TD3: passport |
+|---|---|---|
+| MRZ | 3 lines × 30 characters | 2 lines × 44 characters |
+| Document number | line 1, positions 6–14 (longer numbers continue in the optional data) | line 2, positions 1–9 |
+| Date of birth | line 2, positions 1–6 | line 2, positions 14–19 |
+| Date of expiry | line 2, positions 9–14 | line 2, positions 22–27 |
+| NFC antenna | the whole card | usually the data page or the cover; try both sides |
+
+Pass the full MRZ with `|` between the lines (the format is detected from the line lengths), or just the three fields:
+
+```
+# TD1 ID card (ICAO 9303 Part 5 specimen)
+dotnet run --project src/EmrtdReader -- --mrz "I<UTOD231458907<<<<<<<<<<<<<<<|7408122F1204159UTO<<<<<<<<<<<6|ERIKSSON<<ANNA<MARIA<<<<<<<<<<"
+dotnet run --project src/EmrtdReader -- --doc D23145890 --dob 740812 --exp 120415
+
+# TD3 passport (ICAO 9303 Part 4 specimen)
+dotnet run --project src/EmrtdReader -- --mrz "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<|L898902C36UTO7408122F1204159ZE184226B<<<<<10"
+dotnet run --project src/EmrtdReader -- --doc L898902C3 --dob 740812 --exp 120415
+```
+
+Dates are `YYMMDD`. The usual flow is `MrzReader` on a photo of the MRZ side, then its `MRZ String` line as `--mrz`,
+with the document lying still on the reader. With `--mrz`, the OCR MRZ is also compared with the chip's DG1
+(`OCR MRZ vs chip: identical`).
+
+From code (both formats):
+
+```csharp
+var key = MrzKey.FromMrz(mrzFromOcr);                   // or new MrzKey("L898902C3", "740812", "120415")
+using var transport = PcscTransport.WaitForCard(null, TimeSpan.FromSeconds(60));
+var document = new DocumentReader(transport).Read(key, new ReadOptions { TrustStore = CscaStore.Load("csca") });
+```
+
+If the read fails with `6300` or a PACE error, the MRZ fields are wrong: check the document number for
+O/0 or I/1 mix-ups and that the check digits passed in `MrzReader`.
+
 ### Offline: reading a chip dump
 
 `--out` saves the raw chip files (`COM.bin`, `DG1.bin`, ..., `SOD.bin`). `--dump <folder>` parses such a folder
 without a reader and runs Passive Authentication on it. Files are recognised by their LDS tag, not their name,
-so dumps from other tools (`EF_COM.bin`, `0101.bin`, ...) work too.
+so dumps from other tools (`EF_COM.bin`, `0101.bin`, ...) work too. No MRZ key is needed: the files are already decrypted.
 
-`samples/icao-specimen-dump` is the ICAO 9303 Part 5 TD1 specimen (ANNA MARIA ERIKSSON) as a chip dump, signed by a
-test CSCA (`csca.cer`, in the same folder):
+Two sample dumps, each signed by its own test CSCA (`csca.cer`, in the same folder). DG2 holds placeholder bytes, not a real photo.
+
+| Folder | Document |
+|---|---|
+| `samples/icao-td1-id-card` | ICAO 9303 Part 5 TD1 ID card specimen, `D23145890`, ANNA MARIA ERIKSSON |
+| `samples/icao-td3-passport` | ICAO 9303 Part 4 TD3 passport specimen, `L898902C3`, ANNA MARIA ERIKSSON |
 
 ```
-dotnet run --project src/EmrtdReader -- --dump samples/icao-specimen-dump --csca samples/icao-specimen-dump/csca.cer
+dotnet run --project src/EmrtdReader -- --dump samples/icao-td3-passport --csca samples/icao-td3-passport/csca.cer
+```
+
+```
+MRZ (chip DG1, TD3):
+  P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<
+  L898902C36UTO7408122F1204159ZE184226B<<<<<10
+
+Document code   : P
+Issuing state   : UTO
+Document number : L898902C3
+Surname         : ERIKSSON
+Given names     : ANNA MARIA
+...
+Check digits:
+  Document number : OK
+  Date of birth   : OK
+  Date of expiry  : OK
+  Personal number : OK
+  Composite       : OK
+...
+  Result          : GENUINE
 ```
 
 From code:
 
 ```csharp
-var files = DocumentReader.LoadDump("samples/icao-specimen-dump");
-var document = DocumentReader.Parse(files, trustStore: CscaStore.Load("samples/icao-specimen-dump/csca.cer"));
+var files = DocumentReader.LoadDump("samples/icao-td3-passport");
+var document = DocumentReader.Parse(files, trustStore: CscaStore.Load("samples/icao-td3-passport/csca.cer"));
 Console.WriteLine(string.Join("\n", document.Mrz));
 Console.WriteLine(document.PassiveAuthentication?.IsValid);
 ```
@@ -151,5 +221,6 @@ dotnet test tests/Emrtd.Tests
 
 - ICAO 9303 Part 11 Appendix D (BAC key derivation, mutual authentication, secure messaging APDUs) and
   Appendix G.1 (PACE ECDH-GM AES-128 on brainpoolP256r1), matched byte for byte.
-- A simulated chip (`ChipSimulator`) for end-to-end reads over BAC and five PACE variants, PACE→BAC
-  fallback, wrong MRZ, a tampered data group and an untrusted CSCA.
+- A simulated chip (`ChipSimulator`) for end-to-end reads of a TD1 ID card and a TD3 passport over BAC and
+  five PACE variants, PACE→BAC fallback, wrong MRZ, a tampered data group and an untrusted CSCA.
+- Offline parsing of a chip dump with tool-specific file names.

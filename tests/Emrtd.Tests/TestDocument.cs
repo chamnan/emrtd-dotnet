@@ -13,9 +13,13 @@ using Org.BouncyCastle.X509;
 
 namespace Emrtd.Tests;
 
-/// <summary>Builds a synthetic eMRTD (the ICAO 9303 Part 5 TD1 specimen) with a real CSCA → DSC → SOD chain.</summary>
+/// <summary>
+/// Builds a synthetic eMRTD with a real CSCA → DSC → SOD chain: by default the ICAO 9303 Part 5 TD1 ID card
+/// specimen, or any other MRZ such as the Part 4 TD3 passport specimen.
+/// </summary>
 internal sealed class TestDocument
 {
+    /// <summary>ICAO 9303 Part 5 specimen ID card (TD1, 3 × 30).</summary>
     public static readonly string[] MrzLines =
     [
         "I<UTOD231458907<<<<<<<<<<<<<<<",
@@ -23,20 +27,31 @@ internal sealed class TestDocument
         "ERIKSSON<<ANNA<MARIA<<<<<<<<<<",
     ];
 
-    public MrzKey Key { get; } = MrzKey.FromMrz(string.Join('\n', MrzLines));
+    /// <summary>ICAO 9303 Part 4 specimen passport (TD3, 2 × 44).</summary>
+    public static readonly string[] PassportMrzLines =
+    [
+        "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<",
+        "L898902C36UTO7408122F1204159ZE184226B<<<<<10",
+    ];
+
+    public string[] Mrz { get; }
+    public MrzKey Key { get; }
     public byte[] FaceJpeg { get; }
     public Dictionary<ushort, byte[]> Files { get; } = [];
     public Dictionary<int, byte[]> DataGroups { get; } = [];
     public X509Certificate Csca { get; }
 
-    public TestDocument()
+    public TestDocument(string[]? mrzLines = null)
     {
+        Mrz = mrzLines ?? MrzLines;
+        Key = MrzKey.FromMrz(string.Join('\n', Mrz));
+
         // A fake JPEG large enough to need many READ BINARY chunks.
         FaceJpeg = [0xFF, 0xD8, 0xFF, 0xE0, .. Enumerable.Range(0, 5000).Select(i => (byte)(i * 7)), 0xFF, 0xD9];
 
         byte[] com = Tlv.Encode(0x60, [
             .. Tlv.Encode(0x5F01, "0107"u8), .. Tlv.Encode(0x5F36, "040000"u8), .. Tlv.Encode(0x5C, [0x61, 0x75, 0x6B])]);
-        DataGroups[1] = Tlv.Encode(0x61, Tlv.Encode(0x5F1F, Encoding.ASCII.GetBytes(string.Concat(MrzLines))));
+        DataGroups[1] = Tlv.Encode(0x61, Tlv.Encode(0x5F1F, Encoding.ASCII.GetBytes(string.Concat(Mrz))));
         DataGroups[2] = Tlv.Encode(0x75, Tlv.Encode(0x7F61, [
             .. Tlv.Encode(0x02, [0x01]),
             .. Tlv.Encode(0x7F60, [

@@ -22,6 +22,32 @@ public class DocumentReaderTests
     }
 
     [Fact]
+    public void MrzKey_FromTd3_UsesSecondLine()
+    {
+        var key = MrzKey.FromMrz(string.Join('|', TestDocument.PassportMrzLines));
+        Assert.Equal("L898902C3", key.DocumentNumber);
+        Assert.Equal("740812", key.DateOfBirth);
+        Assert.Equal("120415", key.DateOfExpiry);
+        Assert.Equal("L898902C3674081221204159", key.MrzInformation);
+    }
+
+    [Fact]
+    public void Passport_Td3_IsReadOverPaceAndBac()
+    {
+        var passport = new TestDocument(TestDocument.PassportMrzLines);
+        var store = new CscaStore();
+        store.Add(passport.Csca);
+
+        var bacChip = new ChipSimulator(passport.Key, passport.Files);
+        AssertDocument(new DocumentReader(bacChip).Read(passport.Key, new ReadOptions { TrustStore = store }), passport.Mrz);
+
+        var paceChip = new ChipSimulator(passport.Key, passport.Files, TestDocument.CardAccess("0.4.0.127.0.7.2.2.4.2.2", 13), allowBac: false);
+        var result = new DocumentReader(paceChip).Read(passport.Key, new ReadOptions { TrustStore = store });
+        Assert.StartsWith("PACE", result.AccessControl);
+        AssertDocument(result, passport.Mrz);
+    }
+
+    [Fact]
     public void Bac_ReadsDocumentAndPassesPassiveAuthentication()
     {
         var chip = new ChipSimulator(_document.Key, _document.Files);
@@ -121,11 +147,11 @@ public class DocumentReaderTests
         }
     }
 
-    private void AssertDocument(EmrtdDocument result)
+    private void AssertDocument(EmrtdDocument result, string[]? mrz = null)
     {
         Assert.Equal("0107", result.LdsVersion);
         Assert.Equal([1, 2, 11], result.DataGroupsPresent);
-        Assert.Equal(TestDocument.MrzLines, result.Mrz);
+        Assert.Equal(mrz ?? TestDocument.MrzLines, result.Mrz);
         Assert.Equal(_document.FaceJpeg, result.Face!.Data);
         Assert.Equal("image/jpeg", result.Face.MimeType);
         Assert.Equal("إريكسون  آنا ماريا", result.PersonalDetails["Full name"]);
