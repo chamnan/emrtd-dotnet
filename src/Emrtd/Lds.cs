@@ -17,6 +17,14 @@ public static class Lds
         [0x69] = 9, [0x6A] = 10, [0x6B] = 11, [0x6C] = 12, [0x6D] = 13, [0x6E] = 14, [0x6F] = 15, [0x70] = 16,
     };
 
+    /// <summary>Identifies an LDS file by its outer tag: "COM", "SOD", "DG1".."DG16", or null if it is not one.</summary>
+    public static string? IdentifyFile(byte[] file) => file.Length == 0 ? null : file[0] switch
+    {
+        0x60 => "COM",
+        0x77 => "SOD",
+        var tag => TagToDataGroup.TryGetValue(tag, out int dg) ? $"DG{dg}" : null,
+    };
+
     /// <summary>EF.COM: LDS version, Unicode version and the list of data groups present.</summary>
     public static (string LdsVersion, IReadOnlyList<int> DataGroups) ParseCom(byte[] com)
     {
@@ -66,8 +74,28 @@ public static class Lds
             string name = DetailNames.GetValueOrDefault(field.Tag, $"Tag {field.Tag:X4}");
             string value = field.Tag is 0x5F1D or 0x5F1A ? $"<{field.Value.Length} bytes of image data>" : Encoding.UTF8.GetString(field.Value);
             result[name] = value.Replace('<', ' ').Trim();
+            if (field.Tag == 0x5F0E)
+            {
+                var (primary, secondary) = SplitName(value);
+                result["Primary identifier"] = primary;
+                result["Secondary identifier"] = secondary;
+            }
         }
         return result;
+    }
+
+    /// <summary>
+    /// Splits a name in MRZ notation ("PRIMARY<<SECONDARY", '<' as space) into the primary identifier (surname)
+    /// and secondary identifier (given names). Used by DG11 full name and other names.
+    /// </summary>
+    public static (string Primary, string Secondary) SplitName(string name)
+    {
+        int separator = name.IndexOf("<<", StringComparison.Ordinal);
+        string primary = separator < 0 ? name : name[..separator];
+        string secondary = separator < 0 ? "" : name[(separator + 2)..];
+        return (Clean(primary), Clean(secondary));
+
+        static string Clean(string part) => string.Join(' ', part.Split('<', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
     private static readonly Dictionary<int, string> DetailNames = new()

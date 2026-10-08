@@ -37,6 +37,27 @@ internal sealed class MrzResult
     /// because all-zero text (e.g. a printed "0000/00/00") passes check digits trivially.
     /// </summary>
     public int Score => ValidChecks * 10 - Corrections;
+
+    /// <summary>Prints the fields and check digit results (shared by MrzReader and EmrtdReader).</summary>
+    public void Print(TextWriter output)
+    {
+        output.WriteLine($"Document code   : {DocumentCode}");
+        output.WriteLine($"Issuing state   : {IssuingState}");
+        output.WriteLine($"Document number : {DocumentNumber}");
+        output.WriteLine($"Surname         : {Surname}");
+        output.WriteLine($"Given names     : {GivenNames}");
+        output.WriteLine($"Nationality     : {Nationality}");
+        output.WriteLine($"Date of birth   : {DateOfBirth:yyyy-MM-dd}");
+        output.WriteLine($"Sex             : {Sex}");
+        output.WriteLine($"Date of expiry  : {DateOfExpiry:yyyy-MM-dd}");
+        output.WriteLine($"Optional data 1 : {OptionalData1}");
+        if (Format == MrzFormat.TD1)
+            output.WriteLine($"Optional data 2 : {OptionalData2}");
+        output.WriteLine();
+        output.WriteLine("Check digits:");
+        foreach (var check in Checks)
+            output.WriteLine($"  {check.Field,-16}: {(check.Valid ? "OK" : "FAILED")}");
+    }
 }
 
 /// <summary>Finds and parses ICAO 9303 machine readable zones (TD1, TD2, TD3) in OCR text.</summary>
@@ -109,9 +130,9 @@ internal static partial class MrzParser
 
                 var result = format switch
                 {
-                    MrzFormat.TD1 => ParseTd1(lines),
-                    MrzFormat.TD2 => ParseTd2Or3(lines, MrzFormat.TD2),
-                    _ => ParseTd2Or3(lines, MrzFormat.TD3),
+                    MrzFormat.TD1 => ParseTd1(lines, repair: true),
+                    MrzFormat.TD2 => ParseTd2Or3(lines, MrzFormat.TD2, repair: true),
+                    _ => ParseTd2Or3(lines, MrzFormat.TD3, repair: true),
                 };
                 result.Corrections = corrections;
                 if (best is null || result.Score > best.Score) best = result;
@@ -120,7 +141,19 @@ internal static partial class MrzParser
         return best;
     }
 
-    private static MrzResult ParseTd1(string[] l)
+    /// <summary>
+    /// Parses MRZ lines that are already exact, e.g. DG1 read from the chip: no OCR clean-up and no
+    /// check digit repair, so a wrong check digit is reported as FAILED rather than "fixed".
+    /// </summary>
+    public static MrzResult? ParseLines(string[] lines) => lines switch
+    {
+        [{ Length: 30 }, { Length: 30 }, { Length: 30 }] => ParseTd1(lines, repair: false),
+        [{ Length: 36 }, { Length: 36 }] => ParseTd2Or3(lines, MrzFormat.TD2, repair: false),
+        [{ Length: 44 }, { Length: 44 }] => ParseTd2Or3(lines, MrzFormat.TD3, repair: false),
+        _ => null,
+    };
+
+    private static MrzResult ParseTd1(string[] l, bool repair)
     {
         string docNumber = l[0][5..14];
         char docCheck = l[0][14];
@@ -133,7 +166,7 @@ internal static partial class MrzParser
             docCheck = optional1[end - 1];
             optional1 = optional1[end..];
         }
-        (docNumber, bool docValid) = RepairWithCheckDigit(docNumber, docCheck);
+        (docNumber, bool docValid) = repair ? RepairWithCheckDigit(docNumber, docCheck) : (docNumber, IsValid(docNumber, docCheck));
 
         var checks = new List<CheckResult>
         {
@@ -163,11 +196,11 @@ internal static partial class MrzParser
         };
     }
 
-    private static MrzResult ParseTd2Or3(string[] l, MrzFormat format)
+    private static MrzResult ParseTd2Or3(string[] l, MrzFormat format, bool repair)
     {
         int last = l[1].Length - 1; // composite check digit position
         int optionalEnd = format == MrzFormat.TD3 ? 42 : last;
-        (string docNumber, bool docValid) = RepairWithCheckDigit(l[1][0..9], l[1][9]);
+        (string docNumber, bool docValid) = repair ? RepairWithCheckDigit(l[1][0..9], l[1][9]) : (l[1][0..9], IsValid(l[1][0..9], l[1][9]));
 
         var checks = new List<CheckResult>
         {

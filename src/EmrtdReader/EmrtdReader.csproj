@@ -4,6 +4,11 @@
     <ProjectReference Include="..\Emrtd\Emrtd.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- MRZ field parser shared with MrzReader, to print DG1 the same way -->
+    <Compile Include="..\MrzReader\Mrz.cs" Link="Mrz.cs" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
