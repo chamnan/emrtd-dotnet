@@ -93,7 +93,8 @@ Console.WriteLine($"Access control : {document.AccessControl}");
 Console.WriteLine($"LDS version    : {document.LdsVersion}");
 Console.WriteLine($"Data groups    : {string.Join(", ", document.DataGroupsPresent.Select(g => $"DG{g}"))}");
 Console.WriteLine();
-Console.WriteLine("MRZ (chip DG1):");
+var chipMrz = MrzParser.ParseLines(document.Mrz);
+Console.WriteLine(chipMrz is null ? "MRZ (chip DG1):" : $"MRZ (chip DG1, {chipMrz.Format}):");
 foreach (string line in document.Mrz) Console.WriteLine($"  {line}");
 if (mrz is not null)
 {
@@ -101,7 +102,7 @@ if (mrz is not null)
     bool same = ocrLines.SequenceEqual(document.Mrz);
     Console.WriteLine($"  OCR MRZ vs chip: {(same ? "identical" : "DIFFERENT")}");
 }
-if (MrzParser.ParseLines(document.Mrz) is { } chipMrz)
+if (chipMrz is not null)
 {
     Console.WriteLine();
     chipMrz.Print(Console.Out);
