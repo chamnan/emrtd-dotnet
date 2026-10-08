@@ -57,24 +57,29 @@ public sealed class DocumentReader(ICardTransport transport, Action<string>? log
         var (ldsVersion, present) = Lds.ParseCom(com);
         log?.Invoke($"LDS {ldsVersion}, data groups: {string.Join(", ", present.Select(g => $"DG{g}"))}");
 
-        var dataGroups = new Dictionary<int, byte[]>();
         foreach (int dg in present.Except(EacProtected))
         {
             if (dg == 2 && !options.ReadFace) continue;
             log?.Invoke($"Reading DG{dg}...");
-            if (session.TryReadFile(Lds.DataGroupFileId(dg)) is { } data)
-            {
-                dataGroups[dg] = data;
-                raw[$"DG{dg}"] = data;
-            }
+            if (session.TryReadFile(Lds.DataGroupFileId(dg)) is { } data) raw[$"DG{dg}"] = data;
         }
+        if (session.TryReadFile(Lds.Sod) is { } sod) raw["SOD"] = sod;
 
-        PassiveAuthenticationResult? passive = null;
-        if (session.TryReadFile(Lds.Sod) is { } sod)
-        {
-            raw["SOD"] = sod;
-            passive = PassiveAuthentication.Verify(sod, dataGroups, options.TrustStore);
-        }
+        return Parse(raw, accessControl, options.TrustStore);
+    }
+
+    /// <summary>
+    /// Parses files already read from a chip, without a reader: e.g. a dump saved with <c>EmrtdReader --out</c>.
+    /// Keys are "COM", "SOD", "DG1".."DG16" (see <see cref="LoadDump"/>).
+    /// </summary>
+    public static EmrtdDocument Parse(IReadOnlyDictionary<string, byte[]> files, string accessControl = "none (offline)", CscaStore? trustStore = null)
+    {
+        var dataGroups = files
+            .Where(f => f.Key.StartsWith("DG", StringComparison.Ordinal))
+            .ToDictionary(f => int.Parse(f.Key.AsSpan(2)), f => f.Value);
+        var (ldsVersion, present) = files.TryGetValue("COM", out byte[]? com)
+            ? Lds.ParseCom(com)
+            : ("", dataGroups.Keys.Order().ToList());
 
         return new EmrtdDocument
         {
@@ -85,9 +90,24 @@ public sealed class DocumentReader(ICardTransport transport, Action<string>? log
             Face = dataGroups.TryGetValue(2, out byte[]? dg2) ? Lds.ParseDg2(dg2) : null,
             PersonalDetails = dataGroups.TryGetValue(11, out byte[]? dg11) ? Lds.ParseDetails(dg11) : new Dictionary<string, string>(),
             DocumentDetails = dataGroups.TryGetValue(12, out byte[]? dg12) ? Lds.ParseDetails(dg12) : new Dictionary<string, string>(),
-            PassiveAuthentication = passive,
-            RawFiles = raw,
+            PassiveAuthentication = files.TryGetValue("SOD", out byte[]? sod) ? PassiveAuthentication.Verify(sod, dataGroups, trustStore) : null,
+            RawFiles = files,
         };
+    }
+
+    /// <summary>
+    /// Loads a chip dump folder. Files are recognised by their LDS tag, not their name, so dumps from other
+    /// tools (JMRTD, ICAO test sets: EF_COM.bin, DG1.bin, 0101.bin, ...) work too. Other files are ignored.
+    /// </summary>
+    public static Dictionary<string, byte[]> LoadDump(string folder)
+    {
+        var files = new Dictionary<string, byte[]>();
+        foreach (string path in Directory.EnumerateFiles(folder).Order())
+        {
+            byte[] data = File.ReadAllBytes(path);
+            if (Lds.IdentifyFile(data) is { } name) files.TryAdd(name, data);
+        }
+        return files;
     }
 
     /// <summary>Runs PACE if EF.CardAccess offers a supported variant. Returns the description, or "" to fall back to BAC.</summary>

@@ -108,13 +108,38 @@ over PC/SC, using the MRZ as the access key. JMRTD was used as the reference imp
 dotnet run --project src/EmrtdReader -- --list-readers
 dotnet run --project src/EmrtdReader -- --mrz "<line1>|<line2>|<line3>" --csca <file-or-folder> --out chip-dump
 dotnet run --project src/EmrtdReader -- --doc D23145890 --dob 740812 --exp 120415
+dotnet run --project src/EmrtdReader -- --dump samples/icao-specimen-dump --csca samples/icao-specimen-dump/csca.cer
 ```
+
+The last command reads the sample chip dump offline, with no reader needed (see [Offline: reading a chip dump](#offline-reading-a-chip-dump)).
 
 Other options: `--reader <part of name>`, `--bac` (skip PACE), `--no-face`, `--timeout <seconds>`.
 Exit code: `0` = genuine (Passive Authentication passed), `2` = read failed, `3` = read but not verified.
 
 `--csca` takes DER/PEM certificates or ICAO master lists (`.ml`), a single file or a folder. Without it,
 the SOD signature and hashes are still checked, but not whether the Document Signer is trusted.
+
+### Offline: reading a chip dump
+
+`--out` saves the raw chip files (`COM.bin`, `DG1.bin`, ..., `SOD.bin`). `--dump <folder>` parses such a folder
+without a reader and runs Passive Authentication on it. Files are recognised by their LDS tag, not their name,
+so dumps from other tools (`EF_COM.bin`, `0101.bin`, ...) work too.
+
+`samples/icao-specimen-dump` is the ICAO 9303 Part 5 TD1 specimen (ANNA MARIA ERIKSSON) as a chip dump, signed by a
+test CSCA (`csca.cer`, in the same folder):
+
+```
+dotnet run --project src/EmrtdReader -- --dump samples/icao-specimen-dump --csca samples/icao-specimen-dump/csca.cer
+```
+
+From code:
+
+```csharp
+var files = DocumentReader.LoadDump("samples/icao-specimen-dump");
+var document = DocumentReader.Parse(files, trustStore: CscaStore.Load("samples/icao-specimen-dump/csca.cer"));
+Console.WriteLine(string.Join("\n", document.Mrz));
+Console.WriteLine(document.PassiveAuthentication?.IsValid);
+```
 
 Publish for the Surface: `dotnet publish src/EmrtdReader -c Release -r win-x64` (or `win-arm64` for Snapdragon models).
 

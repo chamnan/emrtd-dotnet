@@ -111,22 +111,7 @@ Console.WriteLine();
 Console.WriteLine("MRZ String:");
 Console.WriteLine(string.Join("|", best.Lines));
 Console.WriteLine();
-Console.WriteLine($"Document code   : {best.DocumentCode}");
-Console.WriteLine($"Issuing state   : {best.IssuingState}");
-Console.WriteLine($"Document number : {best.DocumentNumber}");
-Console.WriteLine($"Surname         : {best.Surname}");
-Console.WriteLine($"Given names     : {best.GivenNames}");
-Console.WriteLine($"Nationality     : {best.Nationality}");
-Console.WriteLine($"Date of birth   : {best.DateOfBirth:yyyy-MM-dd}");
-Console.WriteLine($"Sex             : {best.Sex}");
-Console.WriteLine($"Date of expiry  : {best.DateOfExpiry:yyyy-MM-dd}");
-Console.WriteLine($"Optional data 1 : {best.OptionalData1}");
-if (best.Format == MrzFormat.TD1)
-    Console.WriteLine($"Optional data 2 : {best.OptionalData2}");
-Console.WriteLine();
-Console.WriteLine("Check digits:");
-foreach (var check in best.Checks)
-    Console.WriteLine($"  {check.Field,-16}: {(check.Valid ? "OK" : "FAILED")}");
+best.Print(Console.Out);
 
 return best.IsValid ? 0 : 3;
 

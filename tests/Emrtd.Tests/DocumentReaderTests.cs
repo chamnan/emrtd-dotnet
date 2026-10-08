@@ -99,6 +99,28 @@ public class DocumentReaderTests
         Assert.False(result.PassiveAuthentication.IsValid);
     }
 
+    [Fact]
+    public void Dump_IsParsedOffline_WhateverTheFileNames()
+    {
+        string folder = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            // Names as other tools write them; the files are recognised by their LDS tag.
+            foreach (var (fileId, data) in _document.Files) File.WriteAllBytes(Path.Combine(folder, $"{fileId:X4}.bin"), data);
+            File.WriteAllBytes(Path.Combine(folder, "csca.cer"), _document.Csca.GetEncoded());
+
+            var files = DocumentReader.LoadDump(folder);
+            Assert.Equal(["COM", "DG1", "DG11", "DG2", "SOD"], files.Keys.Order());
+
+            var result = DocumentReader.Parse(files, trustStore: CscaStore.Load(Path.Combine(folder, "csca.cer")));
+            AssertDocument(result);
+        }
+        finally
+        {
+            Directory.Delete(folder, true);
+        }
+    }
+
     private void AssertDocument(EmrtdDocument result)
     {
         Assert.Equal("0107", result.LdsVersion);
@@ -107,6 +129,8 @@ public class DocumentReaderTests
         Assert.Equal(_document.FaceJpeg, result.Face!.Data);
         Assert.Equal("image/jpeg", result.Face.MimeType);
         Assert.Equal("إريكسون  آنا ماريا", result.PersonalDetails["Full name"]);
+        Assert.Equal("إريكسون", result.PersonalDetails["Primary identifier"]);
+        Assert.Equal("آنا ماريا", result.PersonalDetails["Secondary identifier"]);
         Assert.Equal("19740812", result.PersonalDetails["Full date of birth"]);
 
         var pa = result.PassiveAuthentication!;

@@ -1,11 +1,13 @@
 using Emrtd;
+using MrzReader;
 
 // Usage:
 //   EmrtdReader --mrz "<line1>|<line2>|<line3>" [options]
 //   EmrtdReader --doc D23145890 --dob 740812 --exp 120415 [options]
+//   EmrtdReader --dump <folder> [--csca <file or folder>]   (offline: parse a saved chip dump, no reader)
 //   EmrtdReader --list-readers
 // Options: --reader <name part>  --csca <file or folder>  --out <folder>  --bac  --no-face  --timeout <seconds>
-string? mrz = null, doc = null, dob = null, exp = null, readerName = null, cscaPath = null, outDir = null;
+string? mrz = null, doc = null, dob = null, exp = null, readerName = null, cscaPath = null, outDir = null, dumpDir = null;
 bool forceBac = false, readFace = true;
 int timeoutSeconds = 60;
 
@@ -20,6 +22,7 @@ for (int i = 0; i < args.Length; i++)
         case "--reader": readerName = args[++i]; break;
         case "--csca": cscaPath = args[++i]; break;
         case "--out": outDir = args[++i]; break;
+        case "--dump": dumpDir = args[++i]; break;
         case "--bac": forceBac = true; break;
         case "--no-face": readFace = false; break;
         case "--timeout": timeoutSeconds = int.Parse(args[++i]); break;
@@ -33,10 +36,10 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
-MrzKey key;
+MrzKey? key = null;
 try
 {
-    key = mrz is not null ? MrzKey.FromMrz(mrz)
+    if (dumpDir is null) key = mrz is not null ? MrzKey.FromMrz(mrz)
         : doc is not null && dob is not null && exp is not null ? new MrzKey(doc, dob, exp)
         : throw new ArgumentException("Pass --mrz \"<line1>|<line2>|<line3>\" or --doc/--dob/--exp.");
 }
@@ -58,16 +61,26 @@ void Log(string message) => Console.WriteLine($"  · {message}");
 EmrtdDocument document;
 try
 {
-    using var transport = PcscTransport.WaitForCard(readerName, TimeSpan.FromSeconds(timeoutSeconds), Log);
-    Log($"ATR: {Convert.ToHexString(transport.Atr)}");
-    var started = DateTime.UtcNow;
-    document = new DocumentReader(transport, Log).Read(key, new ReadOptions
+    if (dumpDir is not null)
     {
-        UsePace = !forceBac,
-        ReadFace = readFace,
-        TrustStore = trustStore,
-    });
-    Log($"Read in {(DateTime.UtcNow - started).TotalSeconds:F1} s");
+        var files = DocumentReader.LoadDump(dumpDir);
+        if (files.Count == 0) throw new InvalidOperationException($"No LDS files (COM, DGn, SOD) found in {dumpDir}");
+        Log($"Loaded {string.Join(", ", files.Keys)} from {Path.GetFullPath(dumpDir)}");
+        document = DocumentReader.Parse(files, trustStore: trustStore);
+    }
+    else
+    {
+        using var transport = PcscTransport.WaitForCard(readerName, TimeSpan.FromSeconds(timeoutSeconds), Log);
+        Log($"ATR: {Convert.ToHexString(transport.Atr)}");
+        var started = DateTime.UtcNow;
+        document = new DocumentReader(transport, Log).Read(key!, new ReadOptions
+        {
+            UsePace = !forceBac,
+            ReadFace = readFace,
+            TrustStore = trustStore,
+        });
+        Log($"Read in {(DateTime.UtcNow - started).TotalSeconds:F1} s");
+    }
 }
 catch (Exception ex)
 {
@@ -82,12 +95,16 @@ Console.WriteLine($"Data groups    : {string.Join(", ", document.DataGroupsPrese
 Console.WriteLine();
 Console.WriteLine("MRZ (chip DG1):");
 foreach (string line in document.Mrz) Console.WriteLine($"  {line}");
-
 if (mrz is not null)
 {
     string[] ocrLines = mrz.Split(['|', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     bool same = ocrLines.SequenceEqual(document.Mrz);
     Console.WriteLine($"  OCR MRZ vs chip: {(same ? "identical" : "DIFFERENT")}");
+}
+if (MrzParser.ParseLines(document.Mrz) is { } chipMrz)
+{
+    Console.WriteLine();
+    chipMrz.Print(Console.Out);
 }
 
 if (document.PersonalDetails.Count > 0)
