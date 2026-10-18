@@ -112,7 +112,23 @@ if (document.PersonalDetails.Count > 0)
 {
     Console.WriteLine();
     Console.WriteLine("Personal details (DG11):");
-    foreach (var (name, value) in document.PersonalDetails) Console.WriteLine($"  {name,-24}: {value}");
+    var chipName = document.PersonalDetails.TryGetValue("Full name", out string? fullName) ? Lds.SplitNameRaw(fullName) : (Primary: "", Secondary: "");
+    foreach (var (name, value) in document.PersonalDetails)
+    {
+        if (name is "Full name")
+        {
+            Console.WriteLine($"  {name}");
+            Console.WriteLine($"    {"on chip",-22}: {value}");
+            Console.WriteLine($"    {"printout",-22}: {string.Join(' ', value.Split('<', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))}");
+        }
+        else if (name is "Primary identifier" or "Secondary identifier")
+        {
+            Console.WriteLine($"  {name}");
+            Console.WriteLine($"    {"on chip",-22}: {(name == "Primary identifier" ? chipName.Primary : chipName.Secondary)}");
+            Console.WriteLine($"    {"printout",-22}: {value}");
+        }
+        else Console.WriteLine($"  {name,-24}: {value}");
+    }
 }
 if (document.DocumentDetails.Count > 0)
 {

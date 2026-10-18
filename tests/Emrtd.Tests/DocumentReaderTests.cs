@@ -147,6 +147,13 @@ public class DocumentReaderTests
         }
     }
 
+    [Fact]
+    public void SplitNameRaw_KeepsChipSeparators()
+    {
+        Assert.Equal(("إريكسون", "آنا<ماريا"), Lds.SplitNameRaw("إريكسون<<آنا<ماريا"));
+        Assert.Equal(("إريكسون", "آنا ماريا"), Lds.SplitName("إريكسون<<آنا<ماريا"));
+    }
+
     private void AssertDocument(EmrtdDocument result, string[]? mrz = null)
     {
         Assert.Equal("0107", result.LdsVersion);
@@ -154,7 +161,7 @@ public class DocumentReaderTests
         Assert.Equal(mrz ?? TestDocument.MrzLines, result.Mrz);
         Assert.Equal(_document.FaceJpeg, result.Face!.Data);
         Assert.Equal("image/jpeg", result.Face.MimeType);
-        Assert.Equal("إريكسون  آنا ماريا", result.PersonalDetails["Full name"]);
+        Assert.Equal("إريكسون<<آنا<ماريا", result.PersonalDetails["Full name"]);
         Assert.Equal("إريكسون", result.PersonalDetails["Primary identifier"]);
         Assert.Equal("آنا ماريا", result.PersonalDetails["Secondary identifier"]);
         Assert.Equal("19740812", result.PersonalDetails["Full date of birth"]);

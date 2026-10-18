@@ -121,7 +121,8 @@ Exit code: `0` = genuine (Passive Authentication passed), `2` = read failed, `3`
 the SOD signature and hashes are still checked, but not whether the Document Signer is trusted.
 
 It prints the chip's MRZ (DG1) with the same fields and check digits as `MrzReader`, DG11 / DG12 details
-(the DG11 full name split into primary and secondary identifiers), the face image size and the Passive Authentication result.
+(the DG11 full name split into primary and secondary identifiers, each shown as stored on the chip and as a printout,
+see [Names: `<` and `<<`](#names--and-)), the face image size and the Passive Authentication result.
 
 ## Reading an ID card (TD1) or a passport (TD3)
 
@@ -210,6 +211,31 @@ var document = DocumentReader.Parse(files, trustStore: CscaStore.Load("samples/i
 Console.WriteLine(string.Join("\n", document.Mrz));
 Console.WriteLine(document.PassiveAuthentication?.IsValid);
 ```
+
+### Names: `<` and `<<`
+
+Names on the chip use MRZ notation, in DG1 and in the DG11 full name (`5F0E`) and other names (`5F0F`), even in
+non-Latin scripts. `<<` separates the primary identifier (surname) from the secondary identifier (given names);
+a single `<` separates words within a part. For the full name, the console shows both forms: `on chip` keeps the
+separators as stored, `printout` turns each `<` or `<<` into one space.
+
+```
+Personal details (DG11):
+  Full name
+    on chip               : إريكسون<<آنا<ماريا
+    printout              : إريكسون آنا ماريا
+  Primary identifier
+    on chip               : إريكسون
+    printout              : إريكسون
+  Secondary identifier
+    on chip               : آنا<ماريا
+    printout              : آنا ماريا
+  Full date of birth      : 19740812
+```
+
+The chip only ever stores `<` (`0x3C`). In right-to-left text, a terminal may draw it mirrored as `>`.
+Other DG11 / DG12 fields (place of birth, address, ...) print `<` as a space.
+From code, `Lds.SplitNameRaw` gives the parts as stored and `Lds.SplitName` gives the printout.
 
 Publish for the Surface: `dotnet publish src/EmrtdReader -c Release -r win-x64` (or `win-arm64` for Snapdragon models).
 

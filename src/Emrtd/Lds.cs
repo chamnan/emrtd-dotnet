@@ -73,7 +73,8 @@ public static class Lds
             if (field.Tag is 0x5C or 0xA0) continue; // tag list / "other names" count wrapper
             string name = DetailNames.GetValueOrDefault(field.Tag, $"Tag {field.Tag:X4}");
             string value = field.Tag is 0x5F1D or 0x5F1A ? $"<{field.Value.Length} bytes of image data>" : Encoding.UTF8.GetString(field.Value);
-            result[name] = value.Replace('<', ' ').Trim();
+            // Names keep the MRZ '<' separators ("PRIMARY<<SECONDARY"); the split below gives the readable parts.
+            result[name] = field.Tag is 0x5F0E or 0x5F0F ? value.Trim() : value.Replace('<', ' ').Trim();
             if (field.Tag == 0x5F0E)
             {
                 var (primary, secondary) = SplitName(value);
@@ -90,12 +91,20 @@ public static class Lds
     /// </summary>
     public static (string Primary, string Secondary) SplitName(string name)
     {
-        int separator = name.IndexOf("<<", StringComparison.Ordinal);
-        string primary = separator < 0 ? name : name[..separator];
-        string secondary = separator < 0 ? "" : name[(separator + 2)..];
+        var (primary, secondary) = SplitNameRaw(name);
         return (Clean(primary), Clean(secondary));
 
         static string Clean(string part) => string.Join(' ', part.Split('<', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    /// <summary>
+    /// Splits a name in MRZ notation at the first "&lt;&lt;" and keeps the parts as stored on the chip,
+    /// e.g. "ERIKSSON&lt;&lt;ANNA&lt;MARIA" gives ("ERIKSSON", "ANNA&lt;MARIA").
+    /// </summary>
+    public static (string Primary, string Secondary) SplitNameRaw(string name)
+    {
+        int separator = name.IndexOf("<<", StringComparison.Ordinal);
+        return separator < 0 ? (name, "") : (name[..separator], name[(separator + 2)..]);
     }
 
     private static readonly Dictionary<int, string> DetailNames = new()
