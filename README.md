@@ -20,6 +20,13 @@ the ICAO worked examples and a simulated chip, but not yet against a wide range 
 Typical flow: photograph the MRZ side, run `MrzReader`, and pass its one-line MRZ string to `EmrtdReader --mrz`
 while the document is on the NFC reader.
 
+The chip library is published on NuGet as [`Emrtd`](https://www.nuget.org/packages/Emrtd); see the
+[wiki](https://github.com/chamnan/emrtd-dotnet/wiki) for the API guide:
+
+```
+dotnet add package Emrtd
+```
+
 # MRZ reader (OCR)
 
 ```
@@ -250,3 +257,9 @@ dotnet test tests/Emrtd.Tests
 - A simulated chip (`ChipSimulator`) for end-to-end reads of a TD1 ID card and a TD3 passport over BAC and
   five PACE variants, PACE→BAC fallback, wrong MRZ, a tampered data group and an untrusted CSCA.
 - Offline parsing of a chip dump with tool-specific file names.
+
+## Releasing the NuGet package
+
+Push a tag `vX.Y.Z` (`git tag v0.1.0 && git push origin v0.1.0`). The `Publish` workflow builds and tests,
+packs `src/Emrtd` with that version, pushes it to nuget.org (repository secret `NUGET_API_KEY`) and creates a
+GitHub release with the `.nupkg` and `.snupkg`. The `CI` workflow builds, tests and packs every push and pull request.

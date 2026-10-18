@@ -6,6 +6,31 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <PackageId>Emrtd</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Chamnan Nop</Authors>
+    <Copyright>Copyright (c) 2026 Chamnan Nop</Copyright>
+    <Description>Reads the chip of ICAO 9303 ePassports and eID cards over PC/SC (NFC): PACE and BAC with the MRZ as the access key, secure messaging, LDS parsing (DG1 MRZ, DG2 face, DG11, DG12) and Passive Authentication.</Description>
+    <PackageTags>emrtd;epassport;eid;icao;icao9303;mrz;nfc;pcsc;pace;bac;passive-authentication;ekyc</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/chamnan/emrtd-dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/chamnan/emrtd-dotnet.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Not every public member has an XML comment yet. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
     <PackageReference Include="PCSC" Version="7.0.1" />

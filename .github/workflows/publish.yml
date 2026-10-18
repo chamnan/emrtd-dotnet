@@ -1,0 +1,31 @@
+# Publishes the Emrtd package to nuget.org when a version tag is pushed:
+#   git tag v0.1.0 && git push origin v0.1.0
+# Needs the repository secret NUGET_API_KEY (nuget.org > API Keys, scope "Push", glob "Emrtd").
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # to create the GitHub release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - run: dotnet build emrtd-dotnet.slnx -c Release -p:Version=$VERSION
+      - run: dotnet test tests/Emrtd.Tests -c Release --no-build
+      - run: dotnet pack src/Emrtd -c Release --no-build -p:Version=$VERSION -o artifacts
+      - name: Push to nuget.org
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+      - name: GitHub release
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

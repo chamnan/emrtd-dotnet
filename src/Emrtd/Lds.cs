@@ -86,7 +86,7 @@ public static class Lds
     }
 
     /// <summary>
-    /// Splits a name in MRZ notation ("PRIMARY<<SECONDARY", '<' as space) into the primary identifier (surname)
+    /// Splits a name in MRZ notation ("PRIMARY&lt;&lt;SECONDARY", '&lt;' as space) into the primary identifier (surname)
     /// and secondary identifier (given names). Used by DG11 full name and other names.
     /// </summary>
     public static (string Primary, string Secondary) SplitName(string name)
