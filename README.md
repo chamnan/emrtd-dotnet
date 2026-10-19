@@ -35,6 +35,8 @@ dotnet run --project src/MrzReader -- <image> [--lang auto|ocrbfast|ocrb|eng] [-
 
 It prints the MRZ lines, the parsed fields, the check digit results, and the MRZ as one `|`-separated string
 that can be passed to `EmrtdReader --mrz`. Exit code: `0` = all check digits OK, `2` = no MRZ found, `3` = MRZ found but some check digits failed.
+With `3`, the MRZ still opens the chip if the document number, date of birth and date of expiry passed: those
+are the only fields in the chip key (e.g. glare over one character of the personal number).
 
 `image/` contains a specimen Iraqi national ID card (placeholder data, name CITIZEN JOHN):
 
@@ -89,9 +91,11 @@ check digits trivially), then by how many variants read the same MRZ. The search
 or when two variants agree on the best MRZ (e.g. glare hides a character, or the document's own check digits are wrong).
 `--debug` prints the OCR text, score and time of every variant.
 
-Typical timing on an Apple M3 Max: 0.2–0.3 s of OCR, about 0.3–0.5 s for the whole process (0.5 s with one worker).
-Slower CPUs and x64 emulation on ARM64 will add to this; run with `--debug` on the target device to see the
-`OCR total`. In a long-running app, create the Tesseract engines once and reuse them across images.
+Typical timing on an Apple M3 Max: 0.2–0.3 s of OCR for a small, clean image, up to about 0.8 s for the whole
+process with a 1200×1600 phone photo. Slower CPUs and x64 emulation on ARM64 will add to this; run with `--debug`
+on the target device to see the `OCR total`. `dotnet run` checks and rebuilds the project first, which adds 1.5–2 s
+per call, so time the built executable (`src/MrzReader/bin/Release/net10.0/MrzReader`) or a published one.
+In a long-running app, create the Tesseract engines once and reuse them across images.
 
 # eMRTD chip reader (NFC)
 
