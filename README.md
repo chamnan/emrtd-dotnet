@@ -85,7 +85,8 @@ With `--lang auto` (the default) the app uses `ocrbfast`, then `ocrb`, then fall
 
 Several crop and scale variants are tried, cheapest first, up to 4 at a time in parallel (one Tesseract engine per core pair).
 Candidates are ranked by valid check digits, then by how few digit/letter corrections they needed (all-zero text passes
-check digits trivially). The search stops when every check digit passes, or when two variants agree on the same MRZ.
+check digits trivially), then by how many variants read the same MRZ. The search stops when every check digit passes,
+or when two variants agree on the best MRZ (e.g. glare hides a character, or the document's own check digits are wrong).
 `--debug` prints the OCR text, score and time of every variant.
 
 Typical timing on an Apple M3 Max: 0.2–0.3 s of OCR, about 0.3–0.5 s for the whole process (0.5 s with one worker).

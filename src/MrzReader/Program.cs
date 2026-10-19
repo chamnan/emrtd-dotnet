@@ -71,7 +71,6 @@ try
             outcomes[i] = (text, MrzParser.Parse(text), clock.ElapsedMilliseconds - started, image.Width, image.Height);
         });
 
-        bool stable = false;
         for (int i = 0; i < batch.Length; i++)
         {
             var (text, result, ms, width, height) = outcomes[i];
@@ -83,10 +82,13 @@ try
                 Console.Error.WriteLine(text.TrimEnd());
             }
             if (result is null) continue;
-            if (best is null || result.Score > best.Score) best = result;
             string key = string.Join('|', result.Lines);
-            stable |= (seen[key] = seen.GetValueOrDefault(key) + 1) >= 2 && key == string.Join('|', best.Lines);
+            int votes = seen[key] = seen.GetValueOrDefault(key) + 1;
+            // Most valid check digits wins; on a tie, the MRZ that more variants agree on.
+            if (best is null || result.Score > best.Score || (result.Score == best.Score && votes > seen[string.Join('|', best.Lines)]))
+                best = result;
         }
+        bool stable = best is not null && seen[string.Join('|', best.Lines)] >= 2;
         if (best?.IsValid == true || stable) break;
     }
 }
