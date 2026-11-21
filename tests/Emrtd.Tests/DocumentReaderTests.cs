@@ -80,6 +80,57 @@ public class DocumentReaderTests
         var result = new DocumentReader(chip).Read(_document.Key);
 
         Assert.Equal("BAC (3DES)", result.AccessControl);
+        Assert.Equal(PaceOutcome.Unsupported, result.Pace.Outcome);
+    }
+
+    [Fact]
+    public void Pace_Succeeded_IsReported()
+    {
+        var chip = new ChipSimulator(_document.Key, _document.Files, TestDocument.CardAccess("0.4.0.127.0.7.2.2.4.2.2", 13), allowBac: false);
+        var result = new DocumentReader(chip).Read(_document.Key, new ReadOptions { RequirePace = true });
+
+        Assert.Equal(PaceOutcome.Succeeded, result.Pace.Outcome);
+        Assert.Null(result.Pace.Error);
+    }
+
+    [Fact]
+    public void Pace_RefusedByChip_FallsBackToBac_AndIsReported()
+    {
+        var chip = new ChipSimulator(_document.Key, _document.Files, TestDocument.CardAccess("0.4.0.127.0.7.2.2.4.2.2", 13), paceRefusal: 0x6A80);
+        var result = new DocumentReader(chip).Read(_document.Key);
+
+        Assert.Equal("BAC (3DES)", result.AccessControl);
+        Assert.Equal(PaceOutcome.Failed, result.Pace.Outcome);
+        Assert.Contains("6A80", result.Pace.Error);
+    }
+
+    [Fact]
+    public void Pace_RefusedByChip_FailsTheRead_WhenRequired()
+    {
+        var chip = new ChipSimulator(_document.Key, _document.Files, TestDocument.CardAccess("0.4.0.127.0.7.2.2.4.2.2", 13), paceRefusal: 0x6A80);
+        var ex = Assert.Throws<PaceRequiredException>(() => new DocumentReader(chip).Read(_document.Key, new ReadOptions { RequirePace = true }));
+
+        Assert.Equal(PaceOutcome.Failed, ex.Pace.Outcome);
+        Assert.IsType<CardException>(ex.InnerException);
+    }
+
+    [Fact]
+    public void Pace_Unsupported_FailsTheRead_WhenRequired()
+    {
+        var chip = new ChipSimulator(_document.Key, _document.Files, TestDocument.CardAccess("0.4.0.127.0.7.2.2.4.4.2", 13));
+        var ex = Assert.Throws<PaceRequiredException>(() => new DocumentReader(chip).Read(_document.Key, new ReadOptions { RequirePace = true }));
+
+        Assert.Equal(PaceOutcome.Unsupported, ex.Pace.Outcome);
+    }
+
+    [Fact]
+    public void NoCardAccess_IsNotOffered_AndRequirePaceStillReadsOverBac()
+    {
+        var chip = new ChipSimulator(_document.Key, _document.Files);
+        var result = new DocumentReader(chip).Read(_document.Key, new ReadOptions { RequirePace = true });
+
+        Assert.Equal("BAC (3DES)", result.AccessControl);
+        Assert.Equal(PaceOutcome.NotOffered, result.Pace.Outcome);
     }
 
     [Fact]

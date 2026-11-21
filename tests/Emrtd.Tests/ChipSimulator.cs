@@ -35,12 +35,16 @@ internal sealed class ChipSimulator : ICardTransport
     private byte[]? _paceKsEnc, _paceKsMac;
     private int _paceStep;
 
-    public ChipSimulator(MrzKey key, Dictionary<ushort, byte[]> appletFiles, byte[]? cardAccess = null, bool allowBac = true)
+    private readonly ushort? _paceRefusal;
+
+    /// <param name="paceRefusal">If set, the chip answers the first PACE General Authenticate with this status word.</param>
+    public ChipSimulator(MrzKey key, Dictionary<ushort, byte[]> appletFiles, byte[]? cardAccess = null, bool allowBac = true, ushort? paceRefusal = null)
     {
         _key = key;
         _appletFiles = appletFiles;
         _cardAccess = cardAccess;
         _allowBac = allowBac;
+        _paceRefusal = paceRefusal;
     }
 
     public List<string> Log { get; } = [];
@@ -183,6 +187,11 @@ internal sealed class ChipSimulator : ICardTransport
 
     private (byte[], ushort) GeneralAuthenticate(byte[] data)
     {
+        if (_paceRefusal is { } refusal && _paceStep == 1)
+        {
+            _paceStep = 0;
+            return ([], refusal);
+        }
         var info = new PaceInfo(_paceOid!, 2, null);
         var domain = new ECDomainParameters(_curve!);
         byte[] input = Tlv.Parse(data).Children.FirstOrDefault()?.Value ?? [];

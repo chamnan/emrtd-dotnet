@@ -107,6 +107,7 @@ over PC/SC, using the MRZ as the access key. JMRTD was used as the reference imp
 | PACE v2, ECDH generic mapping, 3DES / AES-128 / 192 / 256, standardized curves (param id 8–18) | ✅ |
 | PACE chip authentication mapping (CAM) | key agreement only; the CAM data is not verified |
 | PACE integrated mapping, DH (non-EC) PACE | ❌ falls back to BAC |
+| PACE outcome on the result (`EmrtdDocument.Pace`), opt-in `ReadOptions.RequirePace` to fail instead of falling back | ✅ |
 | BAC + 3DES secure messaging | ✅ |
 | AES secure messaging | ✅ |
 | Reading COM, DG1 (MRZ), DG2 (face, JPEG / JPEG 2000), DG11, DG12, other DGs, SOD | ✅ (files up to 32 KB) |
